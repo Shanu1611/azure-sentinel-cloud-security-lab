@@ -215,7 +215,7 @@ AzureActivity
 | sort by TimeGenerated desc
 ```
 
-`CallerIpAddress` may show the address of Cloud Shell and not your usual browser address, because the command came from Cloud Shell.
+`CallerIpAddress` will probably differ from your usual browser address, because the command came from Cloud Shell. Cloud Shell's outgoing address can change between sessions, so compare it with the address recorded in the log rather than assuming.
 
 **4. Look for the incident** (usually 10-20 minutes in total): in the Defender portal, open **Investigation & response > Incidents & alerts > Incidents** and look for **Diagnostic setting changed or deleted**. If the path differs in your portal, look for an Incidents page under Microsoft Sentinel.
 
@@ -223,22 +223,53 @@ AzureActivity
 
 ## 8. Results
 
-> **TODO before publishing:** complete this section with your real results and screenshots. Do not claim a result you have not seen.
+The detection worked end to end in my lab.
 
-- [ ] The query returned my own diagnostic-setting change (screenshot)
-- [ ] The rule saved with *Validation passed* (screenshot)
-- [ ] The test change reached the `AzureActivity` table (screenshot)
-- [ ] The rule raised an alert and an incident appeared (screenshot)
+| Check | Result |
+|---|---|
+| Test event | One `DIAGNOSTICSETTINGS/WRITE` event at 06:09 UTC (11:39 IST), made by my own account |
+| Alerts | **3** alerts raised for that single event |
+| Incidents | The 3 alerts were grouped into **1** incident: *Diagnostic setting changed or deleted* (Medium, Defense evasion) |
+| Entity mapping | The incident listed my account as an impacted asset and showed the source IP as evidence |
+| Defender verdict | The IP was automatically marked **Suspicious** |
+| Outcome | I investigated, concluded it was my own test change, and resolved the incident with a comment |
 
-```
-screenshots/
-  01-query-result.png
-  02-rule-review.png
-  03-event-in-table.png
-  04-incident.png
-```
+### Screenshots
 
-**Before publishing screenshots, blur or crop:** subscription IDs, workspace IDs, email addresses, public IP addresses, storage account names, and tenant names.
+**The incident in the Incidents list**
+
+![Incident in the Incidents list](Azure%20Screenshot/incidents_tab.png)
+
+**The three alerts inside the incident**
+
+![Alerts tab](Azure%20Screenshot/alerts_tab.png)
+
+**Evidence: the source IP and its verdict**
+
+![Evidence tab](Azure%20Screenshot/evidence_tab.png)
+
+**The matching event in the `AzureActivity` table**
+
+![Query result](Azure%20Screenshot/query_result.png)
+
+**Resolving the incident**
+
+![Manage incident](Azure%20Screenshot/manage_incident.png)
+
+### What I found
+
+- **One event, three alerts, one incident.** The query returned a single event, but the rule raised three alerts: it runs every 5 minutes and looks back 15, so consecutive runs read the same event. Because the alerts share the same account and IP, the incident grouping merged them into one incident, which is what the settings in section 6 were designed to do.
+- **An automatic "Suspicious" verdict is a starting point, not a conclusion.** Defender marked the source IP as suspicious, but the activity was my own test. The caller, the operation, and the time all matched what I did.
+- **The source IP differed from my browser's address.** I ran the change from Cloud Shell, and I did not verify that the recorded IP belongs to Cloud Shell. Cloud Shell sessions are ephemeral, and a later lookup returned a different address, so I treat the IP as weak evidence by itself.
+- **Time zones differ between screens.** The Defender portal showed local time (IST), while the Logs page shows UTC. 11:39 IST and 06:09 UTC are the same moment.
+
+### How I triaged it
+
+1. Opened the incident and checked the **Alerts** tab (3 alerts) and the **Evidence** tab (one IP address, verdict *Suspicious*).
+2. Queried `AzureActivity` and found the matching event: same account, same time, same operation.
+3. Concluded it was my own change, and resolved the incident with a comment explaining that it was a test.
+
+> Screenshots are blurred or cropped to hide subscription IDs, workspace IDs, email addresses, and IP addresses.
 
 ---
 
@@ -268,6 +299,7 @@ screenshots/
 - **Lookback and interval interact.** A lookback longer than the run interval protects against late-arriving data but creates duplicate alerts, so incident grouping matters.
 - **Entities make incidents useful.** Mapping Account and IP lets an analyst pivot from the incident and lets grouping work by who and where.
 - **Defense in depth is visible in the errors.** Outside the VNet, storage access was blocked at the network layer (`403 AuthorizationFailure`). Inside, the network allowed it and the account's own setting refused it (`409 PublicAccessNotPermitted`).
+- **Verify automatic verdicts.** Defender flagged my own test activity as suspicious. A verdict or an IP address on its own is not proof, so check the caller, the operation, and the time before closing an incident.
 
 ---
 
